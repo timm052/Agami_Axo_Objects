@@ -1,0 +1,190 @@
+<objdefs appVersion="1.0.12">
+   <obj.normal id="button_matrix" uuid="751b3605-b067-4670-8506-4eb1c2b3d526">
+      <sDescription>exposes the controls of the MTM axocontrol board</sDescription>
+      <author>avor</author>
+      <license>GPL</license>
+      <helpPatch>button_matrix.axh</helpPatch>
+      <inlets/>
+      <outlets/>
+      <displays/>
+      <params/>
+      <attribs/>
+      <depends>
+         <depend>I2CD1</depend>
+      </depends>
+      <code.declaration><![CDATA[/*
+	LOCAL DATA
+*/
+
+//Defines for IO Expander Device Addresses
+#define IObut1 0x20
+#define IOenc1 0x21
+
+//Defines for IO Expander Port Addresses
+#define MCP_IODIRA 0x00
+#define MCP_IODIRB 0x01
+#define MCP_IOCONA 0x0A
+#define MCP_GPPUA  0x0C
+#define MCP_GPPUB  0x0D
+#define MCP_GPIOA  0x12
+#define MCP_GPIOB  0x13
+
+//Defines for Matrix Rows/Columns
+#define ROW0	0x04 //Note that Row values are not actual pin position, they are for left shifts (<<)
+#define ROW1	0x05
+#define ROW2	0x06
+#define ROW3	0x07
+#define COL0	0x01
+#define COL1	0x02
+#define COL2	0x04
+#define COL3	0x08
+
+
+//Global variables
+uint8_t receive; //Store rxbuf here when returning, so I2C stuff doesn't overwrite it
+uint8_t *txbuf; //Pointer to buffer for transmit (buffers created in setup)
+uint8_t *rxbuf; //Pointer to buffer for receive
+uint8_t check = 0; //Used for i2c debugging, not needed
+msg_t error; //Used for i2c debugging, not needed
+int count = 0; //Used for timing in k-rate
+
+uint8_t k1 = 0; //Key values, should just make these bool, or store all in one int16
+uint8_t k2 = 0;
+uint8_t k3 = 0;
+uint8_t k4 = 0;
+uint8_t k5 = 0;
+uint8_t k6 = 0;
+uint8_t k7 = 0;
+uint8_t k8 = 0;
+uint8_t k9 = 0;
+uint8_t k10 = 0;
+uint8_t k11 = 0;
+uint8_t k12 = 0;
+uint8_t k13 = 0;
+uint8_t k14 = 0;
+uint8_t k15 = 0;
+uint8_t k16 = 0;
+
+//Setup called once in init code (can't be called in local data)
+void setup(){
+  	
+  	static uint8_t _txbuf[32] __attribute__ ((section (".sram2"))); //Need our buffers to be in the right area for I2C
+  	static uint8_t _rxbuf[32] __attribute__ ((section (".sram2")));
+  	txbuf = _txbuf; //Pointers to point to the buffers
+  	rxbuf = _rxbuf;
+
+	//Send command defined below. These messages configure the expander
+  	mcp_send_command(IObut1,MCP_IOCONA,0x28);   // I/O Control Register: BANK=0, SEQOP=1, HAEN=1 (Enable Addressing)
+  	mcp_send_command(IObut1,MCP_IODIRB,0b11110000); //Setting columns on PortB to output and Rows to input
+	mcp_send_command(IObut1,MCP_GPPUB,0b11110000); //Enabling pullups on the rows
+	
+}
+
+//Send command takes device address, register address, and value to send
+void mcp_send_command(uint8_t dev, uint8_t reg, uint8_t val){
+	msg_t temp = 1; //Used to check result of I2C message (not neccessarily needed).
+	//Defined returns start at 0 and go down, so init to 1.
+  i2cAcquireBus(&I2CD1); //Acquire the I2C bus before we start doing I2C stuff
+  txbuf[0] = reg; //First we send the register address
+  txbuf[1] = val; //Then register value
+  temp = i2cMasterTransmitTimeout( //Send an I2C message and store return in 'temp'
+	//This won't store data received over I2C in temp
+	//It will store a msg_t result from the operation (for debug)
+	&I2CD1,  //Transmit using &I2CD1 (from the I2C config object)
+	dev,    //Send to device address given to function
+	txbuf,   //Send from txbuf
+	2,       //Send two messages from the buffer (will start with buf[0]
+	rxbuf,   //Store received data in rxbuf (can just set this to NULL if not receiving)
+	0,       //Store 0 messages here (we're just sending)
+	30);     //Allowed time for timeout (not sure what the measurement is)
+  i2cReleaseBus(&I2CD1); //Release the I2C bus. Make sure we're done with I2C stuff before doing this
+  
+	if(temp == 0){check = 1;} //Convert to an int for debug logging
+	if(temp == -2){check = 2;}
+	if(temp == -1){check = 3;}
+}
+
+//Read command just takes device address and register address
+void mcp_read_command(uint8_t dev, uint8_t reg){
+	msg_t temp = 1; //Used to check result of I2C message (not neccessarily needed).
+			//Defined returns start at 0 and go down, so init to 1.
+        i2cAcquireBus(&I2CD1); //Acquire the I2C bus before we start doing I2C stuff
+        txbuf[0] = reg; //Send the register address
+        temp = i2cMasterTransmitTimeout( //Send an I2C message and store return in 'temp'
+					 //This won't store data received over I2C in temp
+					 //It will store a msg_t result from the operation (for debug)
+		&I2CD1,  //Transmit using &I2CD1 (from the I2C config object)
+		dev,    //Send to device address given to function
+		txbuf,   //Send from txbuf
+		1,       //Send one message from the buffer
+		rxbuf,   //Store received data in rxbuf
+		1,       //Store 1 message received
+		30);     //Allowed time for timeout
+		receive=rxbuf[0]; //Store here instead of in the buffer (for saftety)
+        i2cReleaseBus(&I2CD1); //Release the I2C bus. Make sure we're done with I2C stuff before doing this
+        if(temp == 0){check = 1;} //Convert to an int for debug logging
+		if(temp == -2){check = 2;}
+		if(temp == -1){check = 3;}
+	
+}
+
+//Function for reading the button matrix - called in k-rate code
+void bProcess(){
+	//Due to how we did hardware on the matrix, we're setting things high and checking for low values
+	//Hence inverting (~) a lot of stuff here
+  	mcp_send_command(IObut1,MCP_GPIOB,~COL0); //Set column 0 low (and all others high) on port B of button expander
+	mcp_read_command(IObut1,MCP_GPIOB); //Read values on Port B (will be stored in 'receive' variable)
+	k1 = (~receive&(1<<ROW0)); //If the row 0 pin is low when col 0 row is low, K1 is pressed
+	k5 = (~receive&(1<<ROW1)); //Etc for all other keys
+	k9 = (~receive&(1<<ROW2));
+	k13 = (~receive&(1<<ROW3));
+	mcp_send_command(IObut1,MCP_GPIOB,~COL1); //Repeat process for each column
+	mcp_read_command(IObut1,MCP_GPIOB);
+	k2 = (~receive&(1<<ROW0));
+	k6 = (~receive&(1<<ROW1));
+	k10 = (~receive&(1<<ROW2));
+	k14 = (~receive&(1<<ROW3));
+	mcp_send_command(IObut1,MCP_GPIOB,~COL2);
+	mcp_read_command(IObut1,MCP_GPIOB);
+	k3 = (~receive&(1<<ROW0));
+	k7 = (~receive&(1<<ROW1));
+	k11 = (~receive&(1<<ROW2));
+	k15 = (~receive&(1<<ROW3));
+	mcp_send_command(IObut1,MCP_GPIOB,~COL3);
+	mcp_read_command(IObut1,MCP_GPIOB);
+	k4 = (~receive&(1<<ROW0));
+	k8 = (~receive&(1<<ROW1));
+	k12 = (~receive&(1<<ROW2));
+	k16 = (~receive&(1<<ROW3));
+	
+	//Debug, just log which keys were pressed this loop
+	if(k1){LogTextMessage("K1");}
+	if(k2){LogTextMessage("K2");}
+	if(k3){LogTextMessage("K3");}
+	if(k4){LogTextMessage("K4");}
+	if(k5){LogTextMessage("K5");}
+	if(k6){LogTextMessage("K6");}
+	if(k7){LogTextMessage("K7");}
+	if(k8){LogTextMessage("K8");}
+	if(k9){LogTextMessage("K9");}
+	if(k10){LogTextMessage("K10");}
+	if(k11){LogTextMessage("K11");}
+	if(k12){LogTextMessage("K12");}
+	if(k13){LogTextMessage("K13");}
+	if(k14){LogTextMessage("K14");}
+	if(k15){LogTextMessage("K15");}
+	if(k16){LogTextMessage("K16");}
+	
+}]]></code.declaration>
+      <code.init><![CDATA[setup(); //Don't have access to IO stuff yet when local-data runs, so have to call setup here]]></code.init>
+      <code.krate><![CDATA[/*
+	K-RATE CODE
+*/
+count++; //Dumb loop used for testing. K-rate is apparently 3000Hz and we aren't doing anything else here
+  	if(count == 15){ //Poll every 5ms
+	count = 0; //Reset the count
+	bProcess(); //Process for reading encoders
+	//Change outlets here
+}]]></code.krate>
+   </obj.normal>
+</objdefs>
