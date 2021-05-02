@@ -1,5 +1,5 @@
 <patch-1.0 appVersion="1.0.12">
-   <obj type="agami/button_matrix" uuid="af491c0e-a009-11eb-bcbc-0242ac130002" name="button_matrix" x="56" y="28">
+   <obj type="agami/axo_encoder_read" id="axo_encoder_read" uuid="5a2ae670-a00a-11eb-bcbc-0242ac130002" x="56" y="28">
       <params/>
       <attribs/>
    </obj>

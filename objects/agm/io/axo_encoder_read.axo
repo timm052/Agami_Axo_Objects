@@ -1,0 +1,64 @@
+<objdefs appVersion="1.0.12">
+   <obj.normal id="axo_encoder_read" uuid="5a2ae670-a00a-11eb-bcbc-0242ac130002">
+      <sDescription>excoder agami object</sDescription>
+      <author>avor</author>
+      <license>GPL</license>
+      <helpPatch>button_matrix.axh</helpPatch>
+      <inlets/>
+      <outlets/>
+      <displays/>
+      <params/>
+      <attribs/>
+      <depends>
+         <depend>I2CD1</depend>
+      </depends>
+      <code.declaration><![CDATA[//Addresses
+#define AddrE1 0x20
+#define AddrE2 0x22
+#define GPIOA 0x12
+#define GPIOB 0x13
+
+static uint8_t _txbuf[8] __attribute__ ((section (".sram2"))); //Tx & Rx buffers 'must be located in a DMA-capable memory area'
+static uint8_t _rxbuf[8] __attribute__ ((section (".sram2"))); //Maybe should have these elsewhere? Or each i2c agami object will have its own i2c buffers. But maybe that's okay.
+
+int8_t enc1 = 0; //Value of encoder 1
+bool enc1L = 1; //Pin value for + & - Pins of encoder 1
+bool enc1R = 1; 
+bool enc1Lp = 1; //Previous pin values, used for detecting movement in encoder
+bool enc1Rp = 1; //Will need one of each of these variables for each encoder
+
+void readEnc() //Will read all encoders - should probably work it out to just do one encoder
+{
+	i2cAcquireBus(&I2CD1); //Take control of i2c bus. If it's busy I think Chibi will just let this task chill until its ready?
+	
+	//The code for actually reading the encoder from IO expander should go here
+	txbuf = GPIOA; //Encoder 1 is at the start of Port A
+	i2cMasterTransmitTimeout(&I2CD1, AddrE1, txbuf, 8, rxbuf, 8, 30); //I think this will store the values on PortA in rxbuf
+	enc1L = rxbuf[0]; //Store the values before releasing the bus, to be safe
+	enc1R = rxbuf[1];
+	i2cReleaseBus(&I2CD1); //Release the bus when we're done
+	
+	if(((enc1Lp == 1)&&(enc1Rp == 1))&&((enc1L==0)||(enc1R==0)) //If both pins were high last time, but one is low now
+	{
+		if((enc1L == 1)&&(enc1R == 0)) //Then decrement/increment depending on which pin (might be the wrong way around)
+		{enc1--;}
+		else if((enc1L == 0)&&(enc1R == 1))
+		{enc1++;}
+	}
+	if(enc1>0){enc1=1;} //If value is positive, set to 1
+	else if(enc1<0){enc1=-1;} //If negative, set to -1
+	else {enc1 = 0;} //Else its zero. Doesn't matter what the value is, only the change, so keep it within range to save space
+	enc1Lp = enc1L; //Current pin values become previous pin values.
+	enc1Rp = enc1R;
+	
+	
+}]]></code.declaration>
+      <code.init><![CDATA[static WORKING_AREA(waENC, 64);
+thd = chThdCreateStatic(waENC, sizeof(waENC), NORMALPRIO, readENC, NULL);]]></code.init>
+      <code.dispose><![CDATA[chThdTerminate( thd );
+chThdWait( thd );]]></code.dispose>
+      <code.krate><![CDATA[if(enc1 == 1){outlet_d1 = 1;outlet_d2 = 0;outlet_d3 = 0;}
+if(enc1 == -1){outlet_d1 = 0;outlet_d2 = 1;outlet_d3 = 0;} 
+if(enc1 == 0){outlet_d1 = 0;outlet_d2 = 0;outlet_d3 = 1;}]]></code.krate>
+   </obj.normal>
+</objdefs>

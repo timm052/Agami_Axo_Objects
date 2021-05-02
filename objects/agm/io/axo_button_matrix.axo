@@ -1,6 +1,6 @@
 <objdefs appVersion="1.0.12">
    <obj.normal id="button_matrix" uuid="751b3605-b067-4670-8506-4eb1c2b3d526">
-      <sDescription>exposes the controls of the MTM axocontrol board</sDescription>
+      <sDescription>excoder agami object</sDescription>
       <author>avor</author>
       <license>GPL</license>
       <helpPatch>button_matrix.axh</helpPatch>
