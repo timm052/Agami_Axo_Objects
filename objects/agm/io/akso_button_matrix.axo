@@ -262,32 +262,28 @@ setup();]]></code.init>
       <code.krate><![CDATA[// ***********
 // K-rate Code
 // ***********
-if(k1 == 0)
-		{
-			outlet_key1 = 1;	
-		}
-		else
-		{
-			outlet_key1 = 0;
-		}
+        
+
+outlet_key1 = k1;
+outlet_key2 = k2; //Change outlets here
+outlet_key3 = k3; //Change outlets here
+outlet_key4 = k4; //Change outlets here
+outlet_key5 = k5; //Change outlets here
+outlet_key6 = k6; //Change outlets here
+outlet_key7 = k7; //Change outlets here
+outlet_key8 = k8; //Change outlets here
+outlet_key9 = k9; //Change outlets here
+outlet_key10 = k10; //Change outlets here
+outlet_key11 = k11; //Change outlets here
+outlet_key12 = k12; //Change outlets here
+outlet_key13 = k13; //Change outlets here	
 //Loop used for setting test poll rate. K-rate is 3000Hz and we aren't doing anything else here
 count++; 
   	if(count == 5) 	//Poll every 5ms
   	{
 		count = 0; 	//Reset the count
 		bProcess(); 	//Process for reading encoders
-		outlet_key2 = k2; //Change outlets here
-		outlet_key3 = k3; //Change outlets here
-		outlet_key4 = k4; //Change outlets here
-		outlet_key5 = k5; //Change outlets here
-		outlet_key6 = k6; //Change outlets here
-		outlet_key7 = k7; //Change outlets here
-		outlet_key8 = k8; //Change outlets here
-		outlet_key9 = k9; //Change outlets here
-		outlet_key10 = k10; //Change outlets here
-		outlet_key11 = k11; //Change outlets here
-		outlet_key12 = k12; //Change outlets here
-		outlet_key13 = k13; //Change outlets here	
+		
 	}]]></code.krate>
    </obj.normal>
 </objdefs>
