@@ -262,7 +262,14 @@ setup();]]></code.init>
       <code.krate><![CDATA[// ***********
 // K-rate Code
 // ***********
-
+if(k1 == 0)
+		{
+			outlet_key1 = 1;	
+		}
+		else
+		{
+			outlet_key1 = 0;
+		}
 //Loop used for setting test poll rate. K-rate is 3000Hz and we aren't doing anything else here
 count++; 
   	if(count == 5) 	//Poll every 5ms
@@ -280,15 +287,7 @@ count++;
 		outlet_key10 = k10; //Change outlets here
 		outlet_key11 = k11; //Change outlets here
 		outlet_key12 = k12; //Change outlets here
-		outlet_key13 = k13; //Change outlets here
-		if(k1 == 0)
-		{
-			outlet_key1 = 1;	
-		}
-		else
-		{
-			outlet_key1 = 0;
-		}	
+		outlet_key13 = k13; //Change outlets here	
 	}]]></code.krate>
    </obj.normal>
 </objdefs>
