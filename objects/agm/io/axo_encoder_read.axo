@@ -1,11 +1,13 @@
 <objdefs appVersion="1.0.12">
-   <obj.normal id="axo_encoder_read" uuid="5a2ae670-a00a-11eb-bcbc-0242ac130002">
+   <obj.normal id="axo_encoder_read" uuid="a1958cc9-bc2e-48ef-8bce-d7c41a3f998c">
       <sDescription>excoder agami object</sDescription>
       <author>avor</author>
       <license>GPL</license>
       <helpPatch>button_matrix.axh</helpPatch>
       <inlets/>
-      <outlets/>
+      <outlets>
+         <bool32 name="E1"/>
+      </outlets>
       <displays/>
       <params/>
       <attribs/>
@@ -13,52 +15,187 @@
          <depend>I2CD1</depend>
       </depends>
       <code.declaration><![CDATA[//Addresses
-#define AddrE1 0x20
-#define AddrE2 0x22
-#define GPIOA 0x12
-#define GPIOB 0x13
+//Define IO Expander Addresses
+#define IObut1 0x20
+#define IOenc1 0x21
+
+// Define IO Expander Port Addresses
+#define MCP_IODIRA 0x00
+#define MCP_IODIRB 0x01
+#define MCP_IOCONA 0x0A
+#define MCP_GPPUA 0x0C
+#define MCP_GPPUB 0x0D
+#define MCP_GPIOA 0x12
+#define MCP_GPIOB 0x13
+
+uint8_t receive;   // Store rxbuf here when returning, so I2C stuff doesn't overwrite it
+uint8_t *txbuf;    // Pointer to buffer for transmit (buffers created in setup)
+uint8_t *rxbuf;    // Pointer to buffer for receive
+msg_t error;       // Used for i2c debugging, not implemented
+int count = 0;     // Used for timing in k-rate
+
+bool EV [16] = {0};
+bool EVP [16] = {0};
+uint8_t Turn[8] = {0};
 
 static uint8_t _txbuf[8] __attribute__ ((section (".sram2"))); //Tx & Rx buffers 'must be located in a DMA-capable memory area'
 static uint8_t _rxbuf[8] __attribute__ ((section (".sram2"))); //Maybe should have these elsewhere? Or each i2c agami object will have its own i2c buffers. But maybe that's okay.
 
-int8_t enc1 = 0; //Value of encoder 1
-bool enc1L = 1; //Pin value for + & - Pins of encoder 1
-bool enc1R = 1; 
-bool enc1Lp = 1; //Previous pin values, used for detecting movement in encoder
-bool enc1Rp = 1; //Will need one of each of these variables for each encoder
+
+/* Function: Setup
+*  ------------------------
+* Inital setup for hardware, moves buffer cursor to sram, asigns pointers to 
+* buffers and cofigures the io expander, called in INIT CODE
+* 
+* returns: null
+*/
+void setup()
+{
+    // set buffer location to I2C
+    static uint8_t _txbuf[32] __attribute__((section(".sram2")));
+    static uint8_t _rxbuf[32] __attribute__((section(".sram2")));
+
+    // rx & tx Buffer pointers
+    txbuf = _txbuf;
+    rxbuf = _rxbuf;
+
+    // Send io expander configr
+    mcp_send_command(IObut1, MCP_IOCONA, 0b00100000); // I/O Control Register: BANK=0, SEQOP=1, HAEN=1 (Enable Addressing)
+    mcp_send_command(IObut1, MCP_IODIRB, 0b11110000); // Set col on PortB to out and rows to inp
+    mcp_send_command(IObut1, MCP_GPPUB, 0b11110000);  // Set pullups on rows
+}
+
+
+
+
+/* Function: mcp_send_command
+*  ------------------------
+* Send value to a register of an i2c device  
+*   
+* dev: i2c device address
+* reg: adress of io expander register to 
+* val: value to send to register
+* 
+* returns: null
+*/
+void mcp_send_command(uint8_t dev, uint8_t reg, uint8_t val)
+{
+    msg_t temp = 1;        // Stores result of message(not req) returns <=0 init to 1
+    i2cAcquireBus(&I2CD1); // Acquire the I2C bus
+
+    // store the register address and val in buffer
+    txbuf[0] = reg;
+    txbuf[1] = val;
+
+    // send i2c message stores debug msg_t return in temp
+    temp = i2cMasterTransmitTimeout(
+        &I2CD1, // Transmit using &I2CD1 (from the I2C config object)
+        dev,    // device address
+        txbuf,  // data in txbuff
+        2,      // two block from txbuff starts at buf[0]
+        rxbuf,  // Store recv data in rxbuf (set to NULL when not receiving)
+        0,      // No. of messages to store
+        30);    // timeout
+
+    // Release the I2C bus
+    i2cReleaseBus(&I2CD1);
+
+}
+
+/* Function: mcp_red_command
+*  ------------------------
+* Read the state of i2c ioexpander  
+*   
+* dev: i2c device address
+* reg: adress of io expander register to 
+* 
+* returns: null
+*/
+void mcp_read_command(uint8_t dev, uint8_t reg)
+{
+    msg_t temp = 1;        // Stores result of message(not req) returns <=0 init to 1
+    i2cAcquireBus(&I2CD1); // Acquire the I2C bus
+
+    // store the register address and val in buffer
+    txbuf[0] = reg;
+
+    // send i2c message stores debug msg_t return in temp
+    temp = i2cMasterTransmitTimeout(
+        &I2CD1, // Transmit using &I2CD1 (from the I2C config object)
+        dev,    // device addresson
+        txbuf,  // data in txbuff
+        1,      // two block from txbuff starts at buf[0]
+        rxbuf,  // Store recv data in rxbuf (set to NULL when not receiving)
+        1,      // No. of messages to store
+        30);    // timeout
+
+    // Store here instead of in the buffer (for saftety)
+    receive = rxbuf[0];
+
+    // Release the I2C bus
+    i2cReleaseBus(&I2CD1);
+
+}
 
 void readEnc() //Will read all encoders - should probably work it out to just do one encoder
 {
-	i2cAcquireBus(&I2CD1); //Take control of i2c bus. If it's busy I think Chibi will just let this task chill until its ready?
+	// Read Port A
+    mcp_read_command(IOenc1,MCP_GPIOA);
+
+    // Update Port A values
+    EV[12] = receive & 0b10000000;
+    EV[13] = receive & 0b01000000;
+    EV[14] = receive & 0b00100000;
+    EV[15] = receive & 0b00010000;
+    EV[9] = receive & 0b00001000;
+    EV[8] = receive & 0b00000100;
+    EV[10] = receive & 0b00000010;
+    EV[11] = receive & 0b00000001;
+    
+	// Read Port B
+	mcp_read_command(IOenc1,MCP_GPIOB);
+    
+	// Update Port B values
 	
-	//The code for actually reading the encoder from IO expander should go here
-	txbuf = GPIOA; //Encoder 1 is at the start of Port A
-	i2cMasterTransmitTimeout(&I2CD1, AddrE1, txbuf, 8, rxbuf, 8, 30); //I think this will store the values on PortA in rxbuf
-	enc1L = rxbuf[0]; //Store the values before releasing the bus, to be safe
-	enc1R = rxbuf[1];
-	i2cReleaseBus(&I2CD1); //Release the bus when we're done
-	
-	if(((enc1Lp == 1)&&(enc1Rp == 1))&&((enc1L==0)||(enc1R==0)) //If both pins were high last time, but one is low now
-	{
-		if((enc1L == 1)&&(enc1R == 0)) //Then decrement/increment depending on which pin (might be the wrong way around)
-		{enc1--;}
-		else if((enc1L == 0)&&(enc1R == 1))
-		{enc1++;}
-	}
-	if(enc1>0){enc1=1;} //If value is positive, set to 1
-	else if(enc1<0){enc1=-1;} //If negative, set to -1
-	else {enc1 = 0;} //Else its zero. Doesn't matter what the value is, only the change, so keep it within range to save space
-	enc1Lp = enc1L; //Current pin values become previous pin values.
-	enc1Rp = enc1R;
-	
+	EV[0] = receive & 0b00000001;
+    EV[1] = receive & 0b00000010;
+    EV[2] = receive & 0b00000100;
+    EV[3] = receive & 0b00001000;
+    EV[4] = receive & 0b00010000;
+    EV[5] = receive & 0b00100000;
+    EV[6] = receive & 0b01000000;
+    EV[7] = receive & 0b10000000;
+    
+    for (int i = 0; i < 16; i+2)
+    {
+        Turn[i/2] = 0; // Reset turn value first
+        if(EV[i] != EVP[i]) // If + pin has changed
+        {
+            if(EV[i] == EV[i+1]) // And both pins are high
+            {
+                Turn[i/2] = 1;  // Turn in one direction
+            }
+            else                // Else only one pin is high
+            {
+                Turn[i/2] = 2;  // Turn in other direction
+            }
+        }
+        // Store previous values for next round
+        EVP[i] = EV[i];
+        EVP[i+1] = EV[i+1];
+    }
+    
+
 	
 }]]></code.declaration>
-      <code.init><![CDATA[static WORKING_AREA(waENC, 64);
-thd = chThdCreateStatic(waENC, sizeof(waENC), NORMALPRIO, readENC, NULL);]]></code.init>
-      <code.dispose><![CDATA[chThdTerminate( thd );
-chThdWait( thd );]]></code.dispose>
-      <code.krate><![CDATA[if(enc1 == 1){outlet_d1 = 1;outlet_d2 = 0;outlet_d3 = 0;}
-if(enc1 == -1){outlet_d1 = 0;outlet_d2 = 1;outlet_d3 = 0;} 
-if(enc1 == 0){outlet_d1 = 0;outlet_d2 = 0;outlet_d3 = 1;}]]></code.krate>
+      <code.init><![CDATA[// *********
+// Init Code
+// *********
+
+//Don't have access IO setup yet when local-data runs, so have to call setup here
+setup();]]></code.init>
+      <code.krate><![CDATA[// ***********
+// K-rate Code
+// ***********]]></code.krate>
    </obj.normal>
 </objdefs>

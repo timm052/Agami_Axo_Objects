@@ -1,0 +1,254 @@
+<objdefs appVersion="1.0.12">
+   <obj.normal id="Keyboard" uuid="14c00f6d-b236-4c43-b018-02e6656d93bd">
+      <sDescription>Exposes all 15 keys of the agami as boolean outputs</sDescription>
+      <author>Avorion</author>
+      <license>GPL</license>
+      <helpPatch>keyboard.axh</helpPatch>
+      <inlets/>
+      <outlets>
+         <frac32.bipolar name="key0"/>
+         <frac32.bipolar name="key1" description="output"/>
+         <frac32.bipolar name="key2" description="output"/>
+         <frac32.bipolar name="key3" description="output"/>
+         <frac32.bipolar name="key4" description="output"/>
+         <frac32.bipolar name="key5" description="output"/>
+         <frac32.bipolar name="key6" description="output"/>
+         <frac32.bipolar name="key7" description="output"/>
+         <frac32.bipolar name="key8" description="output"/>
+         <frac32.bipolar name="key9" description="output"/>
+         <frac32.bipolar name="key10" description="output"/>
+         <frac32.bipolar name="key11" description="output"/>
+         <frac32.bipolar name="key12" description="output"/>
+         <frac32.bipolar name="key13" description="output"/>
+         <frac32.bipolar name="key14" description="output"/>
+         <frac32.bipolar name="key15" description="output"/>
+         <bool32 name="test1"/>
+      </outlets>
+      <displays>
+         <frac32.s.dial name="d1" noLabel="true"/>
+      </displays>
+      <params>
+         <frac32.u.map name="p1" noLabel="true"/>
+      </params>
+      <attribs/>
+      <depends>
+         <depend>I2CD1</depend>
+      </depends>
+      <code.declaration><![CDATA[// **********
+// LOCAL DATA
+// **********
+
+//Define IO Expander Addresses
+#define IObut1 0x20
+#define IOenc1 0x21
+
+// Define IO Expander Port Addresses
+#define MCP_IODIRA 0x00
+#define MCP_IODIRB 0x01
+#define MCP_IOCONA 0x0A
+#define MCP_GPPUA 0x0C
+#define MCP_GPPUB 0x0D
+#define MCP_GPIOA 0x12
+#define MCP_GPIOB 0x13
+
+// Define Matrix Rows/Columns
+// NOTE: Row values are not actual pin position, they are for left shifts (<<)
+#define ROW0 0x04
+#define ROW1 0x05
+#define ROW2 0x06
+#define ROW3 0x07
+#define COL0 0x01
+#define COL1 0x02
+#define COL2 0x04
+#define COL3 0x08
+
+// Global variables
+uint8_t receive;   // Store rxbuf here when returning, so I2C stuff doesn't overwrite it
+uint8_t *txbuf;    // Pointer to buffer for transmit (buffers created in setup)
+uint8_t *rxbuf;    // Pointer to buffer for receive
+msg_t error;       // Used for i2c debugging, not implemented
+int count = 0;     // Used for timing in k-rate
+
+bool key [16] = {0};
+
+uint8_t test = 0;
+
+
+/* Function: Setup
+*  ------------------------
+* Inital setup for hardware, moves buffer cursor to sram, asigns pointers to 
+* buffers and cofigures the io expander, called in INIT CODE
+* 
+* returns: null
+*/
+void setup()
+{
+    // set buffer location to I2C
+    static uint8_t _txbuf[32] __attribute__((section(".sram2")));
+    static uint8_t _rxbuf[32] __attribute__((section(".sram2")));
+
+    // rx & tx Buffer pointers
+    txbuf = _txbuf;
+    rxbuf = _rxbuf;
+
+    // Send io expander configr
+    mcp_send_command(IObut1, MCP_IOCONA, 0b00100000); // I/O Control Register: BANK=0, SEQOP=1, HAEN=1 (Enable Addressing)
+    mcp_send_command(IObut1, MCP_IODIRB, 0b11110000); // Set col on PortB to out and rows to inp
+    mcp_send_command(IObut1, MCP_GPPUB, 0b11110000);  // Set pullups on rows
+}
+
+/* Function: mcp_send_command
+*  ------------------------
+* Send value to a register of an i2c device  
+*   
+* dev: i2c device address
+* reg: adress of io expander register to 
+* val: value to send to register
+* 
+* returns: null
+*/
+void mcp_send_command(uint8_t dev, uint8_t reg, uint8_t val)
+{
+    msg_t temp = 1;        // Stores result of message(not req) returns <=0 init to 1
+    i2cAcquireBus(&I2CD1); // Acquire the I2C bus
+
+    // store the register address and val in buffer
+    txbuf[0] = reg;
+    txbuf[1] = val;
+
+    // send i2c message stores debug msg_t return in temp
+    temp = i2cMasterTransmitTimeout(
+        &I2CD1, // Transmit using &I2CD1 (from the I2C config object)
+        dev,    // device address
+        txbuf,  // data in txbuff
+        2,      // two block from txbuff starts at buf[0]
+        rxbuf,  // Store recv data in rxbuf (set to NULL when not receiving)
+        0,      // No. of messages to store
+        30);    // timeout
+
+    // Release the I2C bus
+    i2cReleaseBus(&I2CD1);
+
+}
+
+/* Function: mcp_red_command
+*  ------------------------
+* Read the state of i2c ioexpander  
+*   
+* dev: i2c device address
+* reg: adress of io expander register to 
+* 
+* returns: null
+*/
+void mcp_read_command(uint8_t dev, uint8_t reg)
+{
+    msg_t temp = 1;        // Stores result of message(not req) returns <=0 init to 1
+    i2cAcquireBus(&I2CD1); // Acquire the I2C bus
+
+    // store the register address and val in buffer
+    txbuf[0] = reg;
+
+    // send i2c message stores debug msg_t return in temp
+    temp = i2cMasterTransmitTimeout(
+        &I2CD1, // Transmit using &I2CD1 (from the I2C config object)
+        dev,    // device addresson
+        txbuf,  // data in txbuff
+        1,      // two block from txbuff starts at buf[0]
+        rxbuf,  // Store recv data in rxbuf (set to NULL when not receiving)
+        1,      // No. of messages to store
+        30);    // timeout
+
+    // Store here instead of in the buffer (for saftety)
+    receive = rxbuf[0];
+
+    // Release the I2C bus
+    i2cReleaseBus(&I2CD1);
+}
+
+/* Function: bProcess
+*  ------------------------
+* reads the state of the button matrix called at k-rate but setting pins
+* high then checking for low
+* 
+* returns: null
+*/
+void bProcess()
+{
+    // Setting pins HIGH and check for LOW values ~ denotes inverted values due to matrix design
+    mcp_send_command(IObut1, MCP_GPIOB, ~COL0); // Set col 0 LOW others HIGH on port B io expander
+    mcp_read_command(IObut1, MCP_GPIOB);        // Read values on Port B (stored in receive)
+    key[0] = (~receive & (1 << ROW0));              // eg. If the row 0 pin is low when col 0 row is low, K1 is pressed
+    key[4] = (~receive & (1 << ROW1));
+    key[8] = (~receive & (1 << ROW2));
+    key[12] = (~receive & (1 << ROW3));
+
+    mcp_send_command(IObut1, MCP_GPIOB, ~COL1); //Repeat process for each column
+    mcp_read_command(IObut1, MCP_GPIOB);
+    key[1] = (~receive & (1 << ROW0));
+    key[5] = (~receive & (1 << ROW1));
+    key[9] = (~receive & (1 << ROW2));
+    key[13] = (~receive & (1 << ROW3));
+
+    mcp_send_command(IObut1, MCP_GPIOB, ~COL2);
+    mcp_read_command(IObut1, MCP_GPIOB);
+    key[2] = (~receive & (1 << ROW0));
+    key[6] = (~receive & (1 << ROW1));
+    key[10] = (~receive & (1 << ROW2));
+    key[14] = (~receive & (1 << ROW3));
+
+    mcp_send_command(IObut1, MCP_GPIOB, ~COL3);
+    mcp_read_command(IObut1, MCP_GPIOB);
+    key[3] = (~receive & (1 << ROW0));
+    key[7] = (~receive & (1 << ROW1));
+    key[11] = (~receive & (1 << ROW2));
+    key[15] = (~receive & (1 << ROW3));
+
+    // Log which keys were pressed to terminal each loop
+    //if(key[0]){LogTextMessage("K1");}
+
+}]]></code.declaration>
+      <code.init><![CDATA[// *********
+// Init Code
+// *********
+
+//Don't have access IO setup yet when local-data runs, so have to call setup here
+setup();]]></code.init>
+      <code.krate><![CDATA[// ***********
+// K-rate Code
+// ***********
+
+int32_t test2 = 0;
+
+
+
+//Loop used for setting test poll rate. K-rate is 3000Hz and we aren't doing anything else here
+count++; 
+  	if(count == 5) 	//Poll every ?ms
+  	{
+		count = 0; 	//Reset the count
+		bProcess(); 	//Process for reading encoders
+
+	}
+
+if(key[0] == 1)  {test2 = 10; outlet_key0  = test2;} else {test2 = 0; outlet_key0  = test2;}
+/*if(key[1] == 1)  {outlet_key1  = 15;} else {outlet_key1  = 0;}
+if(key[2] == 1)  {outlet_key2  = 25;} else {outlet_key2  = 0;}
+if(key[3] == 1)  {outlet_key3  = 30;} else {outlet_key3  = 0;}
+if(key[4] == 1)  {outlet_key4  = 35;} else {outlet_key4  = 0;}
+if(key[5] == 1)  {outlet_key5  = 40;} else {outlet_key5  = 0;}
+if(key[6] == 1)  {outlet_key6  = 45;} else {outlet_key6  = 0;}
+if(key[7] == 1)  {outlet_key7  = 50;} else {outlet_key7  = 0;}
+if(key[8] == 1)  {outlet_key8  = 55;} else {outlet_key8  = 0;}
+if(key[9] == 1)  {outlet_key9  = 60;} else {outlet_key9  = 0;}
+if(key[10] == 1) {outlet_key10 = 65;} else {outlet_key10 = 0;}
+if(key[11] == 1) {outlet_key11 = 70;} else {outlet_key11 = 0;}
+if(key[12] == 1) {outlet_key12 = 75;} else {outlet_key12 = 0;}
+if(key[13] == 1) {outlet_key13 = 80;} else {outlet_key13 = 0;}
+if(key[14] == 1) {outlet_key14 = 85;} else {outlet_key14 = 0;}
+if(key[15] == 1) {outlet_key15 = 90;} else {outlet_key15 = 0;}
+*/
+
+disp_d1 = test2;
+if(test2 == 10){LogTextMessage("A");}]]></code.krate>
+   </obj.normal>
+</objdefs>
