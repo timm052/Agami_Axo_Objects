@@ -9,3 +9,5 @@ PCB Layout:
 
 Prototype Board:
 ![Prototype Board](/Board.jpg)
+
+The Agami is developed by Chris Deakin & Tim Mooney
